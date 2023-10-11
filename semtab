@@ -1,0 +1,177 @@
+#lang racket
+
+(provide semtab)
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prends un tableau semantique en argument de la forme <<'((F1) (F2))>> avec F1, F2 qui sont de la forme <<'(AND A B)>>
+;Post: Retourne les différents tableaux semantiques dans une liste: '(T1 T2) 
+(define semtab
+  (lambda (ls)
+    (let ((ls-tmp (semtab-aux-and (semtab-aux-or (semtab-aux-not ls)))))
+      (if (equal? ls ls-tmp)
+          (map not-at-the-end ls)
+          (semtab ls-tmp)))))
+
+;Pre: Prends un tableau sémantique en argument
+;Post: Retourne le tableau sémantique après avoir enlevé les NOT inutiles et avoir appliqué les règles d'élimination du NOT et du IFTHEN
+(define semtab-aux-not
+  (lambda (ls)
+    (let ((ls-tmp (clear-not ls)))
+      (if (equal? ls ls-tmp)
+          ls
+          (semtab-aux-not ls-tmp)))))
+
+;Pre: Prends un tableau sémantique en argument
+;Post: Retourne le tableau sémantique après avoir appliqué les règles d'éliminations du AND
+(define semtab-aux-and
+  (lambda (ls)
+    (let ((ls-tmp (AND ls)))
+      (if (equal? ls ls-tmp)
+          ls
+          (semtab-aux-and ls-tmp)))))
+
+;Pre: Prends un tableau sémantique en argument
+;Post: Retourne le tableau sémantique après avoir appliqué les règles d'éliminations du OR
+(define semtab-aux-or
+  (lambda (ls)
+    (let ((ls-tmp (OR ls)))
+      (if (equal? ls ls-tmp)
+          ls
+          (semtab-aux-or ls-tmp)))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prends un tableau sémantique en argument
+;Post: Retourne le tableau sémantique retranché de tous les éléments 'AND 
+(define AND
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [(not (list? ls)) ls]
+      [(and (list? (car ls)) (equal? (caar ls) 'AND)) (append (AND (cdar ls)) (AND (cdr ls)))]
+      [else (cons (AND (car ls)) (AND (cdr ls)))])))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prends un tableau sémantique en argument
+;Post: Retourne le tableau sémantique pour lequel chaque tableau le constituant a
+;été split en 2 copies dénués d'un 'OR, si il y en a un, et le premier tableau contiendra le premier élément suivant le OR
+; et le second, le second élément suivant le OR, c'est-à-dire
+;'(((OR (OR a b) d)) (a (AND b c) (OR b c))) -> '(((OR a b)) (d) (a (AND b c) b)(a (AND b c) c))
+(define OR
+  (lambda (ls)
+    (if (null? ls)
+        '()
+        (append (create-ls-or (car ls)) (OR (cdr ls))))))
+
+;Pre: Prends un tableau en argument
+;Post: Retourne une liste contenant 2 tableaux, étant 2 copies 2 premiers dénués d'un 'OR, si il y en a un, 
+;et à la place du OR dans le premier tableau il y a le premier élément suivant le 'OR et pour le 
+;deuxième tableau, le deuxième élément suivant le 'OR, c'est-à-dire
+;'((a (OR b c))) -> '((a b) (a c)) 
+(define create-ls-or
+  (lambda (ls)
+    (let ((path (reverse (flatten(FIND ls '())))))
+      (if (null? path)
+          (cons ls '())
+          (list (create-ls-or-aux path ls 1) (create-ls-or-aux path ls 2))))))
+
+;Pre: Prends un tableau en argument, une liste path contenant des atoms 'car ou 'cdr et un entier x
+;Post: Retourne une liste reconstruivant il liste reconstruivant ls mais en suivant le chemin de path
+;lorsque enfin quand il ne reste plus d'élément dans path, si x vaut 1 à l'emplacement où l'on est arrivé à l'aide de path 
+;on met (cadr ls), (caddr ls) sinon
+(define create-ls-or-aux
+    (lambda (path ls x)
+      (cond
+        [(null? path) 
+             (if (= x 1)
+             (cadr ls)
+             (caddr ls))]
+        [(equal? (car path) 'car) (cons (create-ls-or-aux (cdr path) (car ls) x) (cdr ls))]
+        [(equal? (car path) 'cdr) (cons (car ls) (create-ls-or-aux (cdr path) (cdr ls) x))]
+        [else '()])))
+
+;Pre: Prends un tableau ls et path une liste contenant des atoms 'car 'cdr
+;Post: S'il existe un atom 'OR dans ls, renvoit la concaténation de path avec le chemin pour aller 
+;jusqu'à ce OR, c'est-à-dire si path vaut '() et ls vaut '(A B (OR J D)) alors la fonction renvoit '(car (cdr (cdr ())))
+;Sinon renvoit '()
+(define FIND
+  (lambda (ls path)
+    (cond ((null? ls) '())
+          ((not (list? ls)) '())
+          ((equal? 'OR (car ls)) path)
+          (else (let((path1 (FIND (car ls) (list 'car path))))
+                  (if (null? path1)
+                      (FIND (cdr ls) (list 'cdr path))
+                      path1))))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: prend un tableau sémantique en argument
+;Post: nettoie chaque tableau des NOT suivi d'un autre opérateur et transforme les '(IFTHEN A B)
+;en '(OR (NOT A) B)
+(define clear-not
+  (lambda (ls)
+    (map clear-not-aux ls)))
+
+;Pre: prend un tableau en argument
+;Post: nettoie le tableau des NOT suivi d'un autre opérateur et transforme les '(IFTHEN A B)
+;en '(OR (NOT A) B)
+(define clear-not-aux
+  (lambda (ls)
+    (cond [(null? ls) '()]
+          [(not (list? ls)) ls]
+          [(list? (car ls)) (cons (clear-not-aux (car ls)) (clear-not-aux (cdr ls)))]
+          [(null? (cdr ls)) ls]
+          [else
+           (cond [(equal? (car ls) 'NOT)
+                  (cond
+                    [(not (list? (cadr ls))) ls]
+                    [(equal? (caadr ls) 'NOT) (clear-not-aux (cadadr ls))]
+                    [(equal? (caadr ls) 'OR) (NOT-OR (cadadr ls) (car (cdr (cdr (car (cdr ls))))))]
+                    [(equal? (caadr ls) 'IFTHEN) (NOT-IFTHEN (cadadr ls) (car (cdr (cdr (car (cdr ls))))))]
+                    [(equal? (caadr ls) 'AND) (NOT-AND (cadadr ls) (car (cdr (cdr (car (cdr ls))))))]
+                    [else '()])]
+                 [(equal? (car ls) 'IFTHEN) (IFTHEN (cadr ls) (caddr ls))]
+                 [else (cons (car ls) (clear-not-aux (cdr ls)))])])))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prends 2 listes en argument
+;Post: Retourne une liste sous la forme '(AND (NOT ls) (NOT rs))
+(define NOT-OR
+  (lambda (ls rs)
+    (list 'AND (list 'NOT ls) (list 'NOT rs))))
+
+;Pre: Prends 2 listes en argument
+;Post: Retourne une liste sous la forme '(AND ls (NOT rs))
+(define NOT-IFTHEN
+  (lambda (ls rs)
+    (list 'AND ls (list 'NOT rs))))
+
+;Pre: Prends 2 listes en argument
+;Post: Retourne une liste sous la forme '(OR (NOT ls) (NOT rs))
+(define NOT-AND
+  (lambda (ls rs)
+    (list 'OR (list 'NOT ls) (list 'NOT rs))))
+
+
+;Pre: Prends 2 listes en argument
+;Post: Retourne une liste sous la forme '(OR (NOT ls) rs)
+(define IFTHEN
+  (lambda (ls rs)
+    (list 'OR (list 'NOT ls) rs)))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prends 1 liste en argument contenant des atoms ou des listes de 2 arguments dont le premier est NOT, soit par exemple '(a b (NOT c) d)
+;Post: Retourne la liste donnée en argument avec tous les éléments sous forme d'une liste commençant par NOT à la fin de la liste
+;'(a b (NOT c) d) -> '(a b d (NOT c))
+(define not-at-the-end
+  (lambda (ls)
+    (not-at-the-end-acc ls '() '())))
+
+;Pre: Prends 3 listes en argument 
+;la première et la deuxième contenant des atoms ou des listes de 2 arguments dont le premier est NOT, soit par exemple '(a b (NOT c) d)
+;la troisième une liste d'atom
+;Post: Retourne la liste donnée en argument avec tous les éléments sous forme d'une liste commençant par NOT à la fin de la liste
+(define not-at-the-end-acc
+  (lambda (ls ls-trie acc)
+    (cond [(null? ls) (append ls-trie acc)]
+          [(list? (car ls)) (not-at-the-end-acc (cdr ls) ls-trie (cons (car ls) acc))]
+          [else (not-at-the-end-acc (cdr ls) (cons (car ls) ls-trie) acc)])))

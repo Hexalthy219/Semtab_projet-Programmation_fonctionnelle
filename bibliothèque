@@ -1,0 +1,128 @@
+#lang racket
+
+(require "semtab")
+
+(provide satisfiable?)
+(provide valid?)
+(provide tautology?)
+(provide contradiction?)
+(provide models)
+(provide counterexamples)
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend un ensemble de formules dans une liste en argument 
+;Post: Vrai si cette ensemble de formules est satisfaisable
+;      Faux sinon
+(define satisfiable?
+  (lambda (ls)
+    (satisfiable-aux (semtab (cons ls '())))))
+
+;Pre: Prend un tableau sémantique en argument
+;Post: Vrai si l'ensemble de formules du tableau sémantique est satisfaisable
+;      Faux sinon
+(define satisfiable-aux
+  (lambda (ls)
+    (cond [(null? ls) #f]
+          [(satisfiable-tab (car ls)) #t]
+          [else (satisfiable-aux (cdr ls))])))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend en argument la formule(f) dont on veut connaitre la validité ainsi que l'ensemble de formule(F) sur lequel on veut tester la validité 
+;Post: Vrai si cette formules est valide sur F
+;      Faux sinon
+(define valid?
+  (lambda (f F)
+    (contradiction? (list 'AND (list 'NOT f) F))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend un ensemble de formules en argument
+;Post: Vrai si l'ensemble de formules est une tautologie
+;      Faux sinon
+(define tautology?
+  (lambda (ls)
+    (contradiction? (list 'NOT ls))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend un ensemble de formules en argument
+;Post: Vrai si l'ensemble de formules est une contradiction
+;      Faux sinon
+(define contradiction?
+  (lambda (ls)
+    (let((tab (semtab (cons (cons ls '()) '()))))
+      (if (null? tab) #f
+          (contradiction?-aux tab)))))
+
+;Pre: Prend un tableau semantique en argument
+;Post: Vrai si l'ensemble de formule du tableau sémantique est une contradiction
+;      Faux sinon
+(define contradiction?-aux
+  (lambda (ls)
+    (if (null? ls) #t 
+        (let ((test-tab (satisfiable-tab (car ls))))
+              (if (not test-tab) (contradiction?-aux (cdr ls))
+                  #f)))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend un ensemble de formules en argument
+;Post: Retourne une liste de tous les models de l'ensemble de formule pris en argument 
+
+(define models
+  (lambda (ls)
+    (models-aux (semtab (cons ls '())))))
+
+;Pre: Prends un tableau sémantique en argument
+;Post: Retourne une liste de tous les models du tableau sémantique pris en argument
+(define models-aux
+  (lambda (ls)
+    (cond ((null? ls) '())
+          ((satisfiable-tab (car ls)) (cons (car ls) (models-aux (cdr ls))))
+          (else (models-aux (cdr ls))))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend en argument la formule(f) dont on veut connaitre les contres exemples de sa validité sur F
+;     ainsi que l'ensemble de formule(F)
+;Post: Retourne une liste de tous les contres exemples de la validité de f sur F
+(define counterexamples
+  (lambda (f F)
+    (let ((tab (semtab (cons(cons (list 'AND (list 'NOT f) F) '()) '()))))
+      (counterexamples-aux tab))))
+
+;Pre: Prend en argument un tableau sémantique
+;Post: Retourne une liste des contres exemples du tableau semantique donné en argument
+(define counterexamples-aux
+  (lambda (ls)
+    (if (null? ls) '()
+        (if (satisfiable-tab (car ls)) (cons (car ls) (counterexamples-aux (cdr ls)))
+            (counterexamples-aux (cdr ls))))))
+
+;----------------------------------------------------------------------------------------------------------
+;Pre: Prend en argument un tableau
+;Post: Retourne Vrai si le tableau est satisfaisable, c'est-à-dire qu'il n'existe aucun atom 'a tel qu'il y ait aussi une liste '(NOT a) dans ce tableau
+;               Faux sinon
+(define satisfiable-tab
+  (lambda (ls)
+    (satisfiable-tab-acc ls '())))
+
+;Pre: Prend en argument un tableau et une liste acc
+;Post: Retourne Vrai si, soit un atom du tableau 'a, le tableau ne contienne pas de liste '(NOT a)
+;sauf si 'a est un élément de la liste acc
+;               Faux sinon
+(define satisfiable-tab-acc
+  (lambda (ls acc)
+    (cond
+      [(null? ls) #t]
+      [(equal? #f (findf (lambda(x) (equal? (car ls) x)) acc))
+       (letrec
+           ((check
+             (lambda (y value)
+               (cond
+                 [(null? y) #t]
+                 [(and (list? (car y)) (equal? (cadar y) value)) #f]
+                 [else (check (cdr y) value)]))))
+         (if (check ls (car ls))
+             (satisfiable-tab-acc (cdr ls) (cons (car ls) acc))
+             #f))]
+      [else (satisfiable-tab-acc (cdr ls) acc)])))
+    
+               
+         
